@@ -3,6 +3,14 @@
 
 namespace Registry
 {
+	typedef struct SearchRoutineData
+	{
+		HKEY hKey;
+		LPCSTR lpsSearchQuery;
+		DWORD dwResultSize;
+		LPCSTR *lpsResult;
+	};
+
 	CONST WORD cwMaxNameLength = 256;
 
 	BOOL CreateKey(HKEY hOpenedKey, LPCSTR lpsRelativePath)
@@ -188,6 +196,29 @@ namespace Registry
 		}
 	}
 
+	LPSTR *SearchFor(LPSTR *lpsTargets, DWORD dwTargetsSize, LPCSTR lpsSearchQuery, LPDWORD lpdwResultSize)
+	{
+		DWORD dwResultSize = 0;
+		LPSTR *lpsResult = (LPSTR *)calloc(dwResultSize, sizeof(LPSTR)), *lpsBuffer;
+		if (lpsResult != NULL)
+		{
+			for (DWORD dwCurTarget = 0; dwCurTarget < dwTargetsSize; ++dwCurTarget)
+			{
+				if (StrStrI(lpsTargets[dwCurTarget], lpsSearchQuery) != NULL)
+				{
+					lpsBuffer = ConcatLpstrArrays(lpsResult, dwResultSize, &(lpsTargets[dwCurTarget]), 1);
+					if (lpsBuffer != NULL)
+					{
+						lpsResult = lpsBuffer;
+						++dwResultSize;
+					}
+				}
+			}
+		}
+		*lpdwResultSize = dwResultSize;
+		return lpsResult;
+	}
+
 	LPSTR *SearchForKeys(HKEY hOpenedKey, LPCSTR lpsQuery, LPDWORD lpdwResultSize)
 	{
 		if ((lpsQuery == NULL) || (lstrlen(lpsQuery) == 0) || (lpdwResultSize == NULL))
@@ -195,8 +226,12 @@ namespace Registry
 			return NULL;
 		}
 
-		DWORD dwResultSize = 0;
-		LPSTR *lpsResult = RecursiveScan(hOpenedKey, lpsQuery, lpdwResultSize, "");
+		DWORD dwScanResultSize = 0;
+		LPSTR *lpsSingleScan = SingleLayerScan(hOpenedKey, lpsQuery, &dwScanResultSize, "");
+
+		LPSTR *lpsResult = SearchFor(lpsSingleScan, dwScanResultSize, lpsQuery, lpdwResultSize);
+		free(lpsSingleScan);
+
 		return lpsResult;
 	}
 }
