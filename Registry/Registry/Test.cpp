@@ -5,12 +5,14 @@
 int main()
 {
 	HKEY test;
-	DWORD dwData = 42;
-	LPCSTR lpsData = "Hello";
+	DWORD dwResSize = 0;
 
-	printf("%d\n", Registry::OpenKey(HKEY_CURRENT_USER, "Software\\MySoft\\TestKey", KEY_WRITE, &test));
-	printf("%d\n", Registry::AddData(test, "", "TestInt", REG_DWORD, &dwData, sizeof(DWORD)));
-	printf("%d\n", Registry::AddData(test, "subkey", "TestStr", REG_SZ, lpsData, lstrlen(lpsData) + 1));
+	printf("%d\n", Registry::OpenKey(HKEY_CURRENT_USER, "Software", KEY_WRITE, &test));
+	LPSTR *res = Registry::SearchForKeys(test, "test", &dwResSize);
+	for (int i = 0; i < dwResSize; i++)
+	{
+		printf("%s\n", res[i]);
+	}
 	Registry::CloseKey(test);
 	system("pause");
 }
