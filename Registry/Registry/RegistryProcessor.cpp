@@ -1,4 +1,5 @@
 #include "RegistryProcessor.h"
+#include <Shlwapi.h>
 
 namespace Registry
 {
@@ -74,12 +75,12 @@ namespace Registry
 		{
 			dwNameSize = cwMaxNameLength;
 			lLastStatus = RegEnumKeyEx(hSearchableKey, dwIndex, lpsName, &dwNameSize, 0, NULL, NULL, NULL);
-			if (lLastStatus == ERROR_SUCCESS)
+			if ((lLastStatus == ERROR_SUCCESS) && (StrStrI(lpsName, lpsQuery) != NULL))
 			{
 				lpsCopiedName = (LPSTR)calloc(dwNameSize + 1, sizeof(CHAR));
 				if (lpsCopiedName != NULL)
 				{
-					lpsReallocatedResult = (LPSTR *)realloc(lpsResult, dwResultSize + 1);
+					lpsReallocatedResult = (LPSTR *)realloc(lpsResult, (dwResultSize + 1) * sizeof(LPSTR));
 					if (lpsReallocatedResult != NULL)
 					{
 						lpsResult = lpsReallocatedResult;
