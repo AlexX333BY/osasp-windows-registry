@@ -46,6 +46,28 @@ namespace Registry
 		return lStatus == ERROR_SUCCESS;
 	}
 
+	LPSTR *ConcatLpstrArrays(LPSTR *lpsMainArray, DWORD dwMainArrayElementsCount, LPSTR *lpsAddition, DWORD dwAdditionElementsCount)
+	{
+		if ((lpsAddition == NULL) || (dwAdditionElementsCount == 0))
+		{
+			return lpsMainArray;
+		}
+		if (lpsMainArray == NULL)
+		{
+			return NULL;
+		}
+		LPSTR *lpsResultArray = (LPSTR *)realloc(lpsMainArray, (dwMainArrayElementsCount + dwAdditionElementsCount) * sizeof(LPSTR));
+		if (lpsResultArray == NULL)
+		{
+			return NULL;
+		}
+		for (DWORD dwAdditionElement = 0; dwAdditionElement < dwAdditionElementsCount; ++dwAdditionElement)
+		{
+			lpsResultArray[dwMainArrayElementsCount + dwAdditionElement] = lpsAddition[dwAdditionElement];
+		}
+		return lpsResultArray;
+	}
+
 	LPSTR *SearchForKeys(HKEY hOpenedKey, LPCSTR lpsQuery, LPDWORD lpdwResultSize)
 	{
 		CONST WORD cwMaxNameLength = 256;
@@ -80,13 +102,13 @@ namespace Registry
 				lpsCopiedName = (LPSTR)calloc(dwNameSize + 1, sizeof(CHAR));
 				if (lpsCopiedName != NULL)
 				{
-					lpsReallocatedResult = (LPSTR *)realloc(lpsResult, (dwResultSize + 1) * sizeof(LPSTR));
+					strcpy_s(lpsCopiedName, (dwNameSize + 1) * sizeof(CHAR), lpsName);
+					lpsCopiedName[dwNameSize] = '\0';
+					lpsReallocatedResult = ConcatLpstrArrays(lpsResult, dwResultSize, &lpsCopiedName, 1);
 					if (lpsReallocatedResult != NULL)
 					{
 						lpsResult = lpsReallocatedResult;
-						strcpy_s(lpsCopiedName, (dwNameSize + 1) * sizeof(CHAR), lpsName);
-						lpsCopiedName[dwNameSize] = '\0';
-						lpsResult[dwResultSize++] = lpsCopiedName;
+						++dwResultSize;
 					}
 					else
 					{
