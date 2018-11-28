@@ -35,6 +35,13 @@ namespace Registry
 		{
 			return FALSE;
 		}
-		return RegSetKeyValue(hOpenedKey, lpsRelativePath, lpsValueName, dwDataType, lpcData, dwDataSize) == ERROR_SUCCESS;
+		HKEY hWriteKey;
+		if (!OpenKey(hOpenedKey, "", KEY_WRITE, &hWriteKey))
+		{
+			return FALSE;
+		}
+		LSTATUS lStatus = RegSetKeyValue(hWriteKey, lpsRelativePath, lpsValueName, dwDataType, lpcData, dwDataSize);
+		CloseKey(hWriteKey);
+		return lStatus == ERROR_SUCCESS;
 	}
 }
