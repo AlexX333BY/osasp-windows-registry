@@ -3,6 +3,8 @@
 
 namespace Registry
 {
+	CONST WORD cwMaxNameLength = 256;
+
 	BOOL CreateKey(HKEY hOpenedKey, LPCSTR lpsRelativePath)
 	{
 		if (lpsRelativePath == NULL)
@@ -68,17 +70,38 @@ namespace Registry
 		return lpsResultArray;
 	}
 
-	LPSTR *SearchForKeys(HKEY hOpenedKey, LPCSTR lpsQuery, LPDWORD lpdwResultSize)
+	LPSTR CreateSplittedName(LPCSTR lpsBasePath, LPCSTR lpsName)
 	{
-		CONST WORD cwMaxNameLength = 256;
-
-		if ((lpsQuery == NULL) || (lstrlen(lpsQuery) == 0) || (lpdwResultSize == NULL))
+		DWORD dwOldLength = lstrlen(lpsBasePath), dwAdditionLength = lstrlen(lpsName), dwNewLength;
+		LPSTR lpsResult;
+		if (dwOldLength == 0)
 		{
-			return NULL;
+			dwNewLength = dwAdditionLength;
+			lpsResult = (LPSTR)calloc(dwNewLength + 1, sizeof(CHAR));
+			if (lpsResult != NULL)
+			{
+				strcpy_s(lpsResult, dwNewLength + 1, lpsName);
+				lpsResult[dwNewLength] = '\0';
+			}
 		}
+		else
+		{
+			dwNewLength = dwOldLength + 1 + dwAdditionLength;
+			lpsResult = (LPSTR)calloc(dwNewLength + 1, sizeof(CHAR));
+			if (lpsResult != NULL)
+			{
+				strcpy_s(lpsResult, dwOldLength + 1, lpsBasePath);
+				lpsResult[dwOldLength] = '\\';
+				strcpy_s(lpsResult + dwOldLength + 1, dwAdditionLength + 1, lpsName);
+			}
+		}
+		return lpsResult;
+	}
 
+	LPSTR *SingleLayerScan(HKEY hOpenedKey, LPCSTR lpsQuery, LPDWORD lpdwResultSize, LPCSTR lpsBasePath)
+	{
 		HKEY hSearchableKey;
-		if (!OpenKey(hOpenedKey, "", KEY_ENUMERATE_SUB_KEYS, &hSearchableKey))
+		if (!OpenKey(hOpenedKey, lpsBasePath, KEY_ENUMERATE_SUB_KEYS, &hSearchableKey))
 		{
 			return NULL;
 		}
@@ -88,7 +111,7 @@ namespace Registry
 		LPSTR *lpsReallocatedResult;
 
 		LPSTR lpsName = new CHAR[cwMaxNameLength];
-		LPSTR lpsCopiedName;
+		LPSTR lpsFullName;
 		DWORD dwNameSize;
 
 		LSTATUS lLastStatus = ERROR_SUCCESS;
@@ -97,14 +120,12 @@ namespace Registry
 		{
 			dwNameSize = cwMaxNameLength;
 			lLastStatus = RegEnumKeyEx(hSearchableKey, dwIndex, lpsName, &dwNameSize, 0, NULL, NULL, NULL);
-			if ((lLastStatus == ERROR_SUCCESS) && (StrStrI(lpsName, lpsQuery) != NULL))
+			if ((lLastStatus == ERROR_SUCCESS)/* && (StrStrI(lpsName, lpsQuery) != NULL)*/)
 			{
-				lpsCopiedName = (LPSTR)calloc(dwNameSize + 1, sizeof(CHAR));
-				if (lpsCopiedName != NULL)
+				lpsFullName = CreateSplittedName(lpsBasePath, lpsName);
+				if (lpsFullName != NULL)
 				{
-					strcpy_s(lpsCopiedName, (dwNameSize + 1) * sizeof(CHAR), lpsName);
-					lpsCopiedName[dwNameSize] = '\0';
-					lpsReallocatedResult = ConcatLpstrArrays(lpsResult, dwResultSize, &lpsCopiedName, 1);
+					lpsReallocatedResult = ConcatLpstrArrays(lpsResult, dwResultSize, &lpsFullName, 1);
 					if (lpsReallocatedResult != NULL)
 					{
 						lpsResult = lpsReallocatedResult;
@@ -112,14 +133,70 @@ namespace Registry
 					}
 					else
 					{
-						free(lpsCopiedName);
+						free(lpsFullName);
 					}
 				}
 			}
 		}
 
 		delete[] lpsName;
+		CloseKey(hSearchableKey);
 		*lpdwResultSize = dwResultSize;
+		return lpsResult;
+	}
+
+	LPSTR *RecursiveScan(HKEY hOpenedKey, LPCSTR lpsQuery, LPDWORD lpdwResultSize, LPCSTR lpsBasePath)
+	{
+		DWORD dwResultSize, dwSubresultSize, dwTotalSubresultSize = 0;
+
+		LPSTR *lpsSubresult, *lpsTotalSubresult = (LPSTR *)calloc(0, sizeof(LPSTR));
+		LPSTR *lpsBuffer;
+
+		LPSTR *lpsResult = SingleLayerScan(hOpenedKey, lpsQuery, &dwResultSize, lpsBasePath);
+
+		if (lpsResult == NULL)
+		{
+			return NULL;
+		}
+
+		for (DWORD dwResultElement = 0; dwResultElement < dwResultSize; ++dwResultElement)
+		{
+			lpsSubresult = RecursiveScan(hOpenedKey, lpsQuery, &dwSubresultSize, lpsResult[dwResultElement]);
+			if (lpsSubresult != NULL)
+			{
+				lpsBuffer = ConcatLpstrArrays(lpsTotalSubresult, dwTotalSubresultSize, lpsSubresult, dwSubresultSize);
+				if (lpsBuffer != NULL)
+				{
+					lpsTotalSubresult = lpsBuffer;
+					dwTotalSubresultSize += dwSubresultSize;
+				}
+				free(lpsSubresult);
+			}
+		}
+
+		lpsBuffer = ConcatLpstrArrays(lpsResult, dwResultSize, lpsTotalSubresult, dwTotalSubresultSize);
+		free(lpsTotalSubresult);
+		if (lpsBuffer == NULL)
+		{
+			*lpdwResultSize = dwResultSize;
+			return lpsResult;
+		}
+		else
+		{
+			*lpdwResultSize = dwResultSize + dwTotalSubresultSize;
+			return lpsBuffer;
+		}
+	}
+
+	LPSTR *SearchForKeys(HKEY hOpenedKey, LPCSTR lpsQuery, LPDWORD lpdwResultSize)
+	{
+		if ((lpsQuery == NULL) || (lstrlen(lpsQuery) == 0) || (lpdwResultSize == NULL))
+		{
+			return NULL;
+		}
+
+		DWORD dwResultSize = 0;
+		LPSTR *lpsResult = RecursiveScan(hOpenedKey, lpsQuery, lpdwResultSize, "");
 		return lpsResult;
 	}
 }
