@@ -3,12 +3,19 @@
 
 namespace Registry
 {
-	typedef struct SearchRoutineData
+	struct SEARCHROUTINEDATA
 	{
 		HKEY hKey;
 		LPCSTR lpsSearchQuery;
+		LPCSTR lpsBasePath;
 		DWORD dwResultSize;
-		LPCSTR *lpsResult;
+		LPSTR *lpsResult;
+	};
+
+	struct THREADSEARCHDATAPAIR
+	{
+		HANDLE hThread;
+		SEARCHROUTINEDATA srdData;
 	};
 
 	CONST WORD cwMaxNameLength = 256;
@@ -106,7 +113,7 @@ namespace Registry
 		return lpsResult;
 	}
 
-	LPSTR *SingleLayerScan(HKEY hOpenedKey, LPCSTR lpsQuery, LPDWORD lpdwResultSize, LPCSTR lpsBasePath)
+	LPSTR *SingleLayerScan(HKEY hOpenedKey, LPDWORD lpdwResultSize, LPCSTR lpsBasePath)
 	{
 		HKEY hSearchableKey;
 		if (!OpenKey(hOpenedKey, lpsBasePath, KEY_ENUMERATE_SUB_KEYS, &hSearchableKey))
@@ -153,14 +160,14 @@ namespace Registry
 		return lpsResult;
 	}
 
-	LPSTR *RecursiveScan(HKEY hOpenedKey, LPCSTR lpsQuery, LPDWORD lpdwResultSize, LPCSTR lpsBasePath)
+	LPSTR *RecursiveScan(HKEY hOpenedKey, LPDWORD lpdwResultSize, LPCSTR lpsBasePath)
 	{
 		DWORD dwResultSize, dwSubresultSize, dwTotalSubresultSize = 0;
 
 		LPSTR *lpsSubresult, *lpsTotalSubresult = (LPSTR *)calloc(0, sizeof(LPSTR));
 		LPSTR *lpsBuffer;
 
-		LPSTR *lpsResult = SingleLayerScan(hOpenedKey, lpsQuery, &dwResultSize, lpsBasePath);
+		LPSTR *lpsResult = SingleLayerScan(hOpenedKey, &dwResultSize, lpsBasePath);
 
 		if (lpsResult == NULL)
 		{
@@ -169,7 +176,7 @@ namespace Registry
 
 		for (DWORD dwResultElement = 0; dwResultElement < dwResultSize; ++dwResultElement)
 		{
-			lpsSubresult = RecursiveScan(hOpenedKey, lpsQuery, &dwSubresultSize, lpsResult[dwResultElement]);
+			lpsSubresult = RecursiveScan(hOpenedKey, &dwSubresultSize, lpsResult[dwResultElement]);
 			if (lpsSubresult != NULL)
 			{
 				lpsBuffer = ConcatLpstrArrays(lpsTotalSubresult, dwTotalSubresultSize, lpsSubresult, dwSubresultSize);
@@ -219,6 +226,25 @@ namespace Registry
 		return lpsResult;
 	}
 
+	DWORD WINAPI ScanAndSearchThreadRoutine(LPVOID lpParam)
+	{
+		SEARCHROUTINEDATA *srdData = (SEARCHROUTINEDATA *)lpParam;
+		DWORD dwScanResultCount;
+		LPSTR *lpsScanResult = RecursiveScan(srdData->hKey, &dwScanResultCount, srdData->lpsBasePath);
+
+		if (lpsScanResult == NULL)
+		{
+			srdData->lpsResult = NULL;
+			return 1;
+		}
+		else
+		{
+			srdData->lpsResult = SearchFor(lpsScanResult, dwScanResultCount, srdData->lpsSearchQuery, &srdData->dwResultSize);
+			free(lpsScanResult);
+			return 0;
+		}
+	}
+
 	LPSTR *SearchForKeys(HKEY hOpenedKey, LPCSTR lpsQuery, LPDWORD lpdwResultSize)
 	{
 		if ((lpsQuery == NULL) || (lstrlen(lpsQuery) == 0) || (lpdwResultSize == NULL))
@@ -227,10 +253,46 @@ namespace Registry
 		}
 
 		DWORD dwScanResultSize = 0;
-		LPSTR *lpsSingleScan = SingleLayerScan(hOpenedKey, lpsQuery, &dwScanResultSize, "");
+		LPSTR *lpsSingleScan = SingleLayerScan(hOpenedKey, &dwScanResultSize, "");
 
-		LPSTR *lpsResult = SearchFor(lpsSingleScan, dwScanResultSize, lpsQuery, lpdwResultSize);
+		if (lpsSingleScan == NULL)
+		{
+			return NULL;
+		}
+
+		THREADSEARCHDATAPAIR *tsdpSearchStruct = (THREADSEARCHDATAPAIR *)calloc(dwScanResultSize, sizeof(THREADSEARCHDATAPAIR));
+		for (DWORD dwResultItem = 0; dwResultItem < dwScanResultSize; ++dwResultItem)
+		{
+			tsdpSearchStruct[dwResultItem].srdData.hKey = hOpenedKey;
+			tsdpSearchStruct[dwResultItem].srdData.lpsBasePath = lpsSingleScan[dwResultItem];
+			tsdpSearchStruct[dwResultItem].srdData.lpsSearchQuery = lpsQuery;
+			tsdpSearchStruct[dwResultItem].hThread = CreateThread(NULL, 0, ScanAndSearchThreadRoutine, &tsdpSearchStruct[dwResultItem].srdData, 0, NULL);
+		}
+
+		DWORD dwResultSize;
+		LPSTR *lpsResult = SearchFor(lpsSingleScan, dwScanResultSize, lpsQuery, &dwResultSize), *lpsBuffer;
+
+		for (DWORD dwThreadItem = 0; dwThreadItem < dwScanResultSize; ++dwThreadItem)
+		{
+			if (tsdpSearchStruct[dwThreadItem].hThread != NULL)
+			{
+				WaitForSingleObject(tsdpSearchStruct[dwThreadItem].hThread, INFINITE);
+				if (tsdpSearchStruct[dwThreadItem].srdData.lpsResult != NULL)
+				{
+					lpsBuffer = ConcatLpstrArrays(lpsResult, dwResultSize, tsdpSearchStruct[dwThreadItem].srdData.lpsResult, tsdpSearchStruct[dwThreadItem].srdData.dwResultSize);
+					if (lpsBuffer != NULL)
+					{
+						lpsResult = lpsBuffer;
+						dwResultSize += tsdpSearchStruct[dwThreadItem].srdData.dwResultSize;
+					}
+					free(tsdpSearchStruct[dwThreadItem].srdData.lpsResult);
+				}
+				CloseHandle(tsdpSearchStruct[dwThreadItem].hThread);
+			}
+		}
+
 		free(lpsSingleScan);
+		*lpdwResultSize = dwResultSize;
 
 		return lpsResult;
 	}
