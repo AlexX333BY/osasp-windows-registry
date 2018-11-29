@@ -447,9 +447,25 @@ namespace Registry
 		}
 		else
 		{
-			return NULL;
+			kfResult = NULL;
 		}
 		
+		free(lpsCmdOutput);
 		return kfResult;
+	}
+
+	BOOL NotifyChange(HKEY hOpenedKey, LPSTR lpsRelativePath, BOOL bWatchSubtree)
+	{
+		HKEY hKey;
+
+		if (!OpenKey(hOpenedKey, lpsRelativePath, KEY_NOTIFY, &hKey))
+		{
+			return FALSE;
+		}
+
+		BOOL bResult = RegNotifyChangeKeyValue(hOpenedKey, bWatchSubtree, REG_NOTIFY_CHANGE_NAME | REG_NOTIFY_CHANGE_LAST_SET, 
+			NULL, FALSE) == ERROR_SUCCESS;
+		CloseKey(hKey);
+		return bResult;
 	}
 }

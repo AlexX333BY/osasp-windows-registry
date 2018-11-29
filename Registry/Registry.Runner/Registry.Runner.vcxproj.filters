@@ -15,12 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="RegistryProcessor.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="RegistryProcessor.cpp">
+    <ClCompile Include="..\Registry\Runner.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
