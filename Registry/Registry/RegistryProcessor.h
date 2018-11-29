@@ -4,11 +4,11 @@
 
 namespace Registry
 {
-	struct KEYFLAG
+	typedef struct _KEYFLAG
 	{
 		LPCSTR lpsFlagName;
 		LPCSTR lpsFlagValue;
-	};
+	} KEYFLAG;
 
 	BOOL CreateKey(HKEY hOpenedKey, LPCSTR lpsRelativePath);
 	BOOL OpenKey(HKEY hOpenedKey, LPCSTR lpsRelativePath, REGSAM samDesiredRights, PHKEY phResult);

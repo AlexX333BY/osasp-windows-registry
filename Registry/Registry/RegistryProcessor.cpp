@@ -4,20 +4,20 @@
 
 namespace Registry
 {
-	struct SEARCHROUTINEDATA
+	typedef struct _SEARCHROUTINEDATA
 	{
 		HKEY hKey;
 		LPCSTR lpsSearchQuery;
 		LPCSTR lpsBasePath;
 		DWORD dwResultSize;
 		LPSTR *lpsResult;
-	};
+	} SEARCHROUTINEDATA;
 
-	struct THREADSEARCHDATAPAIR
+	typedef struct _THREADSEARCHDATAPAIR
 	{
 		HANDLE hThread;
 		SEARCHROUTINEDATA srdData;
-	};
+	} THREADSEARCHDATAPAIR;
 
 	CONST WORD cwMaxNameLength = 256;
 
@@ -327,6 +327,7 @@ namespace Registry
 		if (CreatePipe(&hReadPipe, &hWritePipe, &saAttributes, 0))
 		{
 			STARTUPINFO siConsole;
+			ZeroMemory(&siConsole, sizeof(STARTUPINFO));
 			siConsole.hStdOutput = hWritePipe;
 			siConsole.hStdError = hWritePipe;
 			siConsole.hStdInput = hReadPipe;
@@ -361,6 +362,57 @@ namespace Registry
 		return lpsResult;
 	}
 
+	BOOL ParseFlagsOutput(LPSTR lpsCommandOutput, KEYFLAG *kfFlags, DWORD dwKeyCount)
+	{
+		if ((lpsCommandOutput == NULL) || (kfFlags == NULL))
+		{
+			return FALSE;
+		}
+
+		LPSTR lpsKeyPos, lpsKeyValuePos, lpsBuffer;
+		LPCSTR lpsDelimiters = ": \r\t\n";
+
+		DWORD dwCommandOutputLength = lstrlen(lpsCommandOutput);
+		LPSTR lpsCommandOutputCopy = (LPSTR)calloc(dwCommandOutputLength + 1, sizeof(CHAR));
+
+		DWORD dwValueLength;
+
+		for (DWORD dwCurKey = 0; dwCurKey < dwKeyCount; ++dwCurKey)
+		{
+			strcpy_s(lpsCommandOutputCopy, (dwCommandOutputLength + 1) * sizeof(CHAR), lpsCommandOutput);
+			lpsKeyPos = StrStrI(lpsCommandOutputCopy, kfFlags[dwCurKey].lpsFlagName);
+			if (lpsKeyPos == NULL)
+			{
+				kfFlags[dwCurKey].lpsFlagValue = "";
+			}
+			else
+			{
+				lpsKeyValuePos = strtok_s(lpsKeyPos + lstrlen(kfFlags[dwCurKey].lpsFlagName), lpsDelimiters, &lpsBuffer);
+				if (lpsKeyValuePos == NULL)
+				{
+					kfFlags[dwCurKey].lpsFlagValue = "";
+				}
+				else
+				{
+					dwValueLength = lstrlen(lpsKeyValuePos);
+					lpsBuffer = (LPSTR)calloc(dwValueLength + 1, sizeof(CHAR));
+					if (lpsBuffer == NULL)
+					{
+						kfFlags[dwCurKey].lpsFlagValue = "";
+					}
+					else
+					{
+						strcpy_s(lpsBuffer, dwValueLength + 1, lpsKeyValuePos);
+						kfFlags[dwCurKey].lpsFlagValue = lpsBuffer;
+					}
+				}
+			}
+		}
+
+		free(lpsCommandOutputCopy);
+		return TRUE;
+	}
+
 	KEYFLAG *GetFlags(LPSTR lpsKey, LPDWORD lpdwFlagsCount)
 	{
 		if ((lpsKey == NULL) || (lpdwFlagsCount == NULL))
@@ -374,9 +426,30 @@ namespace Registry
 			return NULL;
 		}
 
-		// TODO: sprintf_s(lpsKey...), parse (strtok?)
+		DWORD dwCmdLength = lstrlen("REG FLAGS  QUERY") + lstrlen(lpsKey);
+		LPSTR lpsCmd = (LPSTR)calloc(dwCmdLength + 1, sizeof(CHAR));
+		if (lpsCmd == NULL)
+		{
+			return NULL;
+		}
+		sprintf_s(lpsCmd, dwCmdLength + 1, "REG FLAGS %s QUERY", lpsKey);
+		LPSTR lpsCmdOutput = GetCommandOutput(lpsCmd);
+		free(lpsCmd);
+		if (lpsCmdOutput == NULL)
+		{
+			return NULL;
+		}
 
-		*lpdwFlagsCount = dwFlagsCount;
+		if (ParseFlagsOutput(lpsCmdOutput, kfResult, dwFlagsCount))
+		{
+			*lpdwFlagsCount = dwFlagsCount;
+			return kfResult;
+		}
+		else
+		{
+			return NULL;
+		}
+		
 		return kfResult;
 	}
 }
