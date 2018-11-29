@@ -1,5 +1,6 @@
 #include "RegistryProcessor.h"
 #include <Shlwapi.h>
+#include <stdio.h>
 
 namespace Registry
 {
@@ -135,7 +136,7 @@ namespace Registry
 		{
 			dwNameSize = cwMaxNameLength;
 			lLastStatus = RegEnumKeyEx(hSearchableKey, dwIndex, lpsName, &dwNameSize, 0, NULL, NULL, NULL);
-			if ((lLastStatus == ERROR_SUCCESS)/* && (StrStrI(lpsName, lpsQuery) != NULL)*/)
+			if (lLastStatus == ERROR_SUCCESS)
 			{
 				lpsFullName = CreateSplittedName(lpsBasePath, lpsName);
 				if (lpsFullName != NULL)
@@ -295,5 +296,87 @@ namespace Registry
 		*lpdwResultSize = dwResultSize;
 
 		return lpsResult;
+	}
+
+	KEYFLAG *GetInitializedFlags(LPDWORD lpdwCount)
+	{
+		CONST DWORD dwFlagsCount = 3;
+		KEYFLAG *kfResult = (KEYFLAG *)calloc(dwFlagsCount, sizeof(KEYFLAG));
+
+		if (kfResult == NULL)
+		{
+			return NULL;
+		}
+
+		kfResult[0].lpsFlagName = "REG_KEY_DONT_VIRTUALIZE";
+		kfResult[1].lpsFlagName = "REG_KEY_DONT_SILENT_FAIL";
+		kfResult[2].lpsFlagName = "REG_KEY_RECURSE_FLAG";
+		*lpdwCount = dwFlagsCount;
+		return kfResult;
+	}
+
+	LPSTR GetCommandOutput(LPSTR lpsCommand)
+	{
+		HANDLE hReadPipe, hWritePipe;
+		SECURITY_ATTRIBUTES saAttributes;
+		saAttributes.bInheritHandle = TRUE;
+		saAttributes.lpSecurityDescriptor = NULL;
+		saAttributes.nLength = sizeof(SECURITY_ATTRIBUTES);
+		LPSTR lpsResult = NULL;
+
+		if (CreatePipe(&hReadPipe, &hWritePipe, &saAttributes, 0))
+		{
+			STARTUPINFO siConsole;
+			siConsole.hStdOutput = hWritePipe;
+			siConsole.hStdError = hWritePipe;
+			siConsole.hStdInput = hReadPipe;
+			siConsole.dwFlags = STARTF_USESTDHANDLES;
+			PROCESS_INFORMATION piInfo;
+
+			if (CreateProcess(NULL, lpsCommand, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &siConsole, &piInfo))
+			{
+				CONST DWORD dwBufLength = 4096;
+				LPSTR lpsBuffer = (LPSTR)calloc(dwBufLength, sizeof(CHAR));
+				DWORD dwReadCount;
+
+				WaitForSingleObject(piInfo.hProcess, INFINITE);
+
+				if (ReadFile(hReadPipe, lpsBuffer, (dwBufLength - 1) * sizeof(CHAR), &dwReadCount, NULL))
+				{
+					lpsBuffer[dwReadCount / sizeof(CHAR)] = '\0';
+					lpsResult = lpsBuffer;
+				}
+				else
+				{
+					free(lpsBuffer);
+				}
+
+				CloseHandle(piInfo.hThread);
+				CloseHandle(piInfo.hProcess);
+			}
+			CloseHandle(hReadPipe);
+			CloseHandle(hWritePipe);
+		}
+
+		return lpsResult;
+	}
+
+	KEYFLAG *GetFlags(LPSTR lpsKey, LPDWORD lpdwFlagsCount)
+	{
+		if ((lpsKey == NULL) || (lpdwFlagsCount == NULL))
+		{
+			return NULL;
+		}
+		DWORD dwFlagsCount;
+		KEYFLAG *kfResult = GetInitializedFlags(&dwFlagsCount);
+		if (kfResult == NULL)
+		{
+			return NULL;
+		}
+
+		// TODO: sprintf_s(lpsKey...), parse (strtok?)
+
+		*lpdwFlagsCount = dwFlagsCount;
+		return kfResult;
 	}
 }

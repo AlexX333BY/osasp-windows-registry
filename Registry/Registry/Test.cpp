@@ -8,7 +8,7 @@ int main()
 	DWORD dwResSize = 0;
 
 	Registry::OpenKey(HKEY_CURRENT_USER, "Software", KEY_WRITE, &test);
-	LPSTR *res = Registry::SearchForKeys(test, "test", &dwResSize);
+	LPSTR *res = Registry::SearchForKeys(test, "Go", &dwResSize);
 	for (DWORD i = 0; i < dwResSize; i++)
 	{
 		printf("%s\n", res[i]);
